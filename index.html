@@ -1,0 +1,1344 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>EVOAK Spatial Intelligence Engine | Vision 980</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Import Map for React and Lucide Icons -->
+    <script type="importmap">
+    {
+      "imports": {
+        "react": "https://esm.sh/react@18.2.0",
+        "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+        "lucide-react": "https://esm.sh/lucide-react@0.292.0"
+      }
+    }
+    </script>
+</head>
+<body class="bg-[#020617] overflow-x-hidden antialiased">
+    <div id="root"></div>
+
+    <script type="text/babel" data-type="module">
+import React, { useState, useEffect, useRef } from 'react';
+import { createRoot } from 'react-dom/client';
+import { 
+  Database, Activity, Crosshair, Minimize, Search, Globe, User, ChevronDown, 
+  Briefcase, Building, Plus, Star, X, CreditCard, Heart, ArrowLeft, DoorOpen, ArrowUpRight,
+  Train, BarChart3, ShieldCheck, Zap, ArrowRight, Map as MapIcon, Check
+} from 'lucide-react';
+
+// --- DYNAMIC SCRIPT LOADER ---
+const loadScript = (src) => {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
+    const script = document.createElement('script');
+    script.src = src;
+    script.onload = () => {
+        script.setAttribute('data-loaded', 'true');
+        resolve();
+    };
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+};
+
+// --- ADVANCED PROCEDURAL TEXTURES (Powers Brown Aesthetic) ---
+const createGlassTexture = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#0f172a'; 
+  ctx.fillRect(0, 0, 512, 512);
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)'; 
+  ctx.lineWidth = 2;
+  for(let y=0; y<512; y+=32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(512, y); ctx.stroke(); }
+  for(let x=0; x<512; x+=32) { ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, 512); ctx.stroke(); }
+  return canvas;
+};
+
+const createEmissiveTexture = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512; canvas.height = 512;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#000000';
+  ctx.fillRect(0, 0, 512, 512);
+  for(let x = 2; x < 512; x += 32) {
+    for(let y = 2; y < 512; y += 32) {
+      if(Math.random() > 0.8) {
+        ctx.fillStyle = Math.random() > 0.5 ? '#fde68a' : '#e0f2fe'; 
+        ctx.fillRect(x, y, 28, 28);
+      }
+    }
+  }
+  return canvas;
+};
+
+const createStreetTexture = () => {
+  const canvas = document.createElement('canvas');
+  canvas.width = 1024; canvas.height = 1024;
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#020617'; 
+  ctx.fillRect(0, 0, 1024, 1024);
+  for(let i=0; i<15000; i++) {
+    ctx.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.03)' : 'rgba(0,0,0,0.5)';
+    ctx.fillRect(Math.random()*1024, Math.random()*1024, 2, 2);
+  }
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)'; 
+  ctx.setLineDash([10, 15]);
+  ctx.lineWidth = 2;
+  for(let i = 0; i < 1024; i += 128) {
+    ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, 1024); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(1024, i); ctx.stroke();
+  }
+  return canvas;
+};
+
+// --- DATA LABELS FOR 3D-TO-2D PROJECTION ---
+const mapDataLabels = [
+  { id: '1', text: "Vision 980 Cap Concept", pos: [0, 180, 200], expired: false, color: "text-[#d8833b]" },
+  { id: '2', text: "Reclaim East Oakland Hub", pos: [-400, 250, -100], expired: false, color: "text-[#1a3632]" },
+  { id: '3', text: "Displaced Asset (Historical)", pos: [350, 50, -250], expired: true, color: "text-rose-500" },
+];
+
+// --- GEMINI AI INTEGRATION ---
+const generateGeminiContent = async (prompt, systemInstruction = "") => {
+  const apiKey = ""; // API key is automatically injected by the execution environment
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`;
+  const payload = {
+    contents: [{ parts: [{ text: prompt }] }]
+  };
+  if (systemInstruction) {
+    payload.systemInstruction = { parts: [{ text: systemInstruction }] };
+  }
+
+  let retries = 5;
+  let delay = 1000;
+  while (retries > 0) {
+    try {
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      return data.candidates?.[0]?.content?.parts?.[0]?.text || "No content generated.";
+    } catch (error) {
+      retries--;
+      if (retries === 0) return "AI service is currently unavailable. Please try again later.";
+      await new Promise(resolve => setTimeout(resolve, delay));
+      delay *= 2; // Exponential backoff: 1s, 2s, 4s, 8s, 16s
+    }
+  }
+};
+
+// --- HYPER-REALISTIC SPATIAL ENGINE ---
+const ProprietarySpatialEngine = ({ labelsContainerRef, onNodeClick, isExplorationMode, interiorTarget }) => {
+  const mountRef = useRef(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const interiorRef = useRef(interiorTarget);
+  const onNodeClickRef = useRef(onNodeClick);
+  const modeRef = useRef(isExplorationMode);
+  
+  useEffect(() => { interiorRef.current = interiorTarget; }, [interiorTarget]);
+  useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
+  useEffect(() => { modeRef.current = isExplorationMode; }, [isExplorationMode]);
+
+  useEffect(() => {
+    let isCancelled = false;
+    let scene, camera, renderer, animationFrameId, controls, raycaster, mouse;
+    let interactableObjects = [];
+    let trafficParticles, stars;
+    let labelElements = []; 
+    let podGroup;
+    
+    let flightState = {
+      isFlying: false,
+      targetPos: null,
+      targetLookAt: null,
+    };
+    let cinematicAngle = 0;
+    let hoveredObject = null;
+    let wasInInterior = false;
+
+    const isMobile = window.innerWidth < 768;
+    const buildingCount = isMobile ? 800 : 2500;
+    const starCount = isMobile ? 2000 : 6000;
+    const trafficCount = isMobile ? 1500 : 3500;
+    const corridorLength = 5000;
+
+    const initThreeJS = async () => {
+      try {
+        await loadScript('https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js');
+
+        if (isCancelled) return;
+        const THREE = window.THREE;
+        
+        const width = Math.max(1, mountRef.current.clientWidth || window.innerWidth);
+        const height = Math.max(1, mountRef.current.clientHeight || window.innerHeight);
+
+        raycaster = new THREE.Raycaster();
+        mouse = new THREE.Vector2();
+        flightState.targetPos = new THREE.Vector3();
+        flightState.targetLookAt = new THREE.Vector3();
+
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x020617); 
+        scene.fog = new THREE.FogExp2(0x020617, 0.0008); 
+
+        camera = new THREE.PerspectiveCamera(45, width / height, 1, 15000);
+        camera.position.set(-800, 500, 1000); 
+
+        renderer = new THREE.WebGLRenderer({ antialias: !isMobile, alpha: false, powerPreference: "high-performance" });
+        renderer.setSize(width, height);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = !isMobile; 
+        if (!isMobile) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.3;
+        
+        renderer.domElement.style.width = '100%';
+        renderer.domElement.style.height = '100%';
+        renderer.domElement.style.position = 'absolute';
+        renderer.domElement.style.top = '0';
+        renderer.domElement.style.left = '0';
+        mountRef.current.appendChild(renderer.domElement);
+
+        controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2 - 0.02; 
+        controls.minDistance = 50; 
+        controls.maxDistance = 4000;
+        controls.target.set(0, 50, 0);
+
+        scene.add(new THREE.AmbientLight(0x0f172a, 2.0)); 
+        
+        const moonLight = new THREE.DirectionalLight(0xe0f2fe, 0.6);
+        moonLight.position.set(1000, 2000, 500);
+        if (!isMobile) {
+          moonLight.castShadow = true;
+          moonLight.shadow.mapSize.width = 2048;
+          moonLight.shadow.mapSize.height = 2048;
+          moonLight.shadow.camera.near = 100;
+          moonLight.shadow.camera.far = 5000;
+          moonLight.shadow.camera.left = -2000;
+          moonLight.shadow.camera.right = 2000;
+          moonLight.shadow.camera.top = 2000;
+          moonLight.shadow.camera.bottom = -2000;
+        }
+        scene.add(moonLight);
+
+        const orangeGlow = new THREE.PointLight(0xd8833b, 2.0, 3000); 
+        orangeGlow.position.set(0, 200, 0);
+        scene.add(orangeGlow);
+
+        const greenGlow = new THREE.PointLight(0x1a3632, 3.0, 2500);
+        greenGlow.position.set(-500, 100, -500);
+        scene.add(greenGlow);
+
+        const starGeo = new THREE.BufferGeometry();
+        const starPos = new Float32Array(starCount * 3);
+        for(let i=0; i<starCount*3; i++) {
+          starPos[i] = (Math.random() - 0.5) * 12000;
+          starPos[i+1] = Math.random() * 5000 + 500; 
+        }
+        starGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
+        const starMat = new THREE.PointsMaterial({color: 0xffffff, size: isMobile ? 1.5 : 2.5, transparent: true, opacity: 0.9});
+        stars = new THREE.Points(starGeo, starMat);
+        scene.add(stars);
+
+        const groundTex = new THREE.CanvasTexture(createStreetTexture());
+        groundTex.wrapS = THREE.RepeatWrapping; groundTex.wrapT = THREE.RepeatWrapping;
+        groundTex.repeat.set(40, 40);
+
+        const groundMat = new THREE.MeshStandardMaterial({ 
+          map: groundTex, color: 0x020617, roughness: 0.1, metalness: 0.9 
+        });
+        const ground = new THREE.Mesh(new THREE.PlaneGeometry(15000, 15000), groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        if (!isMobile) ground.receiveShadow = true;
+        scene.add(ground);
+
+        const glassTex = new THREE.CanvasTexture(createGlassTexture());
+        glassTex.wrapS = THREE.RepeatWrapping; glassTex.wrapT = THREE.RepeatWrapping;
+        const emissiveTex = new THREE.CanvasTexture(createEmissiveTexture());
+        emissiveTex.wrapS = THREE.RepeatWrapping; emissiveTex.wrapT = THREE.RepeatWrapping;
+        
+        const buildingGeo = new THREE.BoxGeometry(1, 1, 1);
+        const glassMat = new THREE.MeshStandardMaterial({ 
+          map: glassTex, emissiveMap: emissiveTex, emissive: new THREE.Color(0xffffff), emissiveIntensity: 1.0,
+          roughness: 0.1, metalness: 0.9, color: 0x1e293b
+        });
+
+        const blockSize = 60;
+        const streetWidth = 25;
+        const cityLimit = isMobile ? 1200 : 2500;
+        const corridorWidth = 250;
+
+        const bldgInstanced = new THREE.InstancedMesh(buildingGeo, glassMat, buildingCount);
+        if (!isMobile) { bldgInstanced.castShadow = true; bldgInstanced.receiveShadow = true; }
+        scene.add(bldgInstanced);
+
+        const dummy = new THREE.Object3D();
+        let bldgIndex = 0;
+
+        for (let x = -cityLimit; x <= cityLimit; x += (blockSize + streetWidth)) {
+          for (let z = -cityLimit; z <= cityLimit; z += (blockSize + streetWidth)) {
+            if (bldgIndex >= buildingCount) break;
+            if (Math.abs(x) < corridorWidth / 2 + 30) continue; 
+            if (Math.random() > 0.8) continue;
+
+            let h = (Math.random() * 80) + 30;
+            if (Math.abs(x) > 400 && Math.abs(z) > 400) h += (Math.random() * 400); 
+            
+            const bw = Math.random() * (blockSize - 10) + 20;
+            const bd = Math.random() * (blockSize - 10) + 20;
+            const bx = x + (Math.random() * (blockSize - bw)) - (blockSize/2 - bw/2);
+            const bz = z + (Math.random() * (blockSize - bd)) - (blockSize/2 - bd/2);
+
+            dummy.position.set(bx, h / 2, bz);
+            dummy.scale.set(bw, h, bd);
+            dummy.updateMatrix();
+            bldgInstanced.setMatrixAt(bldgIndex++, dummy.matrix);
+          }
+        }
+        bldgInstanced.instanceMatrix.needsUpdate = true;
+
+        const trenchGeo = new THREE.BoxGeometry(corridorWidth, 5, corridorLength);
+        const trenchMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.8 });
+        const trench = new THREE.Mesh(trenchGeo, trenchMat);
+        trench.position.y = 2.5;
+        if (!isMobile) trench.receiveShadow = true;
+        scene.add(trench);
+
+        const tubeRadius = 15;
+        const tubeGeo = new THREE.CylinderGeometry(tubeRadius, tubeRadius, corridorLength, 32);
+        const tubeMat = new THREE.MeshPhysicalMaterial({ 
+          color: 0xffffff, transmission: 0.95, opacity: 1, roughness: 0.05, metalness: 0.2, transparent: true
+        });
+        const tube = new THREE.Mesh(tubeGeo, tubeMat);
+        tube.rotation.x = Math.PI / 2;
+        tube.position.set(0, 20, 0);
+        scene.add(tube);
+
+        const ringGeo = new THREE.TorusGeometry(16, 1.5, 16, 64);
+        const ringMat = new THREE.MeshStandardMaterial({ color: 0x5e24ff, emissive: 0x5e24ff, emissiveIntensity: 2.0 });
+        for(let z = -corridorLength/2; z < corridorLength/2; z += 150) {
+           const ring = new THREE.Mesh(ringGeo, ringMat);
+           ring.position.set(0, 20, z);
+           scene.add(ring);
+        }
+
+        podGroup = new THREE.Group();
+        podGroup.position.set(0, 20, 0);
+        const podShell = new THREE.Mesh(new THREE.CylinderGeometry(10, 10, 80, 32), new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.9, roughness: 0.1 }));
+        podShell.rotation.x = Math.PI / 2;
+        podGroup.add(podShell);
+        
+        const podGlow = new THREE.Mesh(new THREE.CylinderGeometry(10.2, 10.2, 60, 16), new THREE.MeshStandardMaterial({ color: 0xd8833b, emissive: 0xd8833b, emissiveIntensity: 2.0, transparent: true, opacity: 0.8 }));
+        podGlow.rotation.x = Math.PI / 2;
+        podGroup.add(podGlow);
+        podGroup.add(new THREE.PointLight(0xd8833b, 5.0, 300));
+        scene.add(podGroup);
+
+        const buildSphere = (zPos) => {
+          const group = new THREE.Group();
+          group.position.set(0, 0, zPos);
+
+          const core = new THREE.Mesh(
+            new THREE.SphereGeometry(90, 32, 32, 0, Math.PI * 2, 0, Math.PI * 0.85),
+            new THREE.MeshPhysicalMaterial({ color: 0x1a3632, transmission: 0.9, opacity: 1, roughness: 0.1, metalness: 0.3, side: THREE.DoubleSide })
+          );
+          core.position.y = 90;
+          group.add(core);
+
+          const louverMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.2, metalness: 0.6 });
+          for(let y = 20; y <= 170; y += 15) {
+             const dy = Math.abs(y - 90);
+             if (dy > 85) continue;
+             const radius = Math.sqrt(90*90 - dy*dy) + 3; 
+             const louver = new THREE.Mesh(new THREE.TorusGeometry(radius, 1.5, 16, 64), louverMat);
+             louver.rotation.x = Math.PI / 2;
+             louver.position.y = y;
+             if (!isMobile) louver.castShadow = true;
+             group.add(louver);
+          }
+
+          const innerCore = new THREE.Mesh(new THREE.CylinderGeometry(15, 15, 180, 16), new THREE.MeshStandardMaterial({ color: 0x5e24ff, emissive: 0x5e24ff, emissiveIntensity: 1.5 }));
+          innerCore.position.y = 90;
+          group.add(innerCore);
+          group.add(new THREE.PointLight(0x5e24ff, 4.0, 200).translateY(90));
+
+          const hitBox = new THREE.Mesh(new THREE.BoxGeometry(190, 190, 190), new THREE.MeshBasicMaterial({visible:false}));
+          hitBox.position.y = 90;
+          hitBox.userData = { 
+            id: `RECLAIM-HUB-${zPos}`, type: 'Cultural Sphere', 
+            desc: 'A geodesic structure housing public parks and community gathering spaces. Funded by Reclaim East Oakland.', 
+            camPos: new THREE.Vector3(250, 150, zPos + 250), interiorCamPos: new THREE.Vector3(40, 80, zPos + 40), interiorLookAt: new THREE.Vector3(0, 90, zPos)
+          };
+          group.add(hitBox);
+          interactableObjects.push(hitBox);
+
+          scene.add(group);
+        };
+
+        const buildMegaHub = (zPos) => {
+          const group = new THREE.Group();
+          group.position.set(0, 0, zPos);
+
+          const roof = new THREE.Mesh(
+            new THREE.BoxGeometry(corridorWidth + 100, 8, 400),
+            new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0.3 })
+          );
+          roof.position.y = 140;
+          if (!isMobile) roof.castShadow = true;
+          group.add(roof);
+
+          const glassWalls = new THREE.Mesh(
+            new THREE.BoxGeometry(corridorWidth + 80, 140, 380),
+            new THREE.MeshPhysicalMaterial({ color: 0x1e293b, transmission: 0.95, roughness: 0.05, transparent: true, side: THREE.BackSide })
+          );
+          glassWalls.position.y = 70;
+          group.add(glassWalls);
+
+          const hitBox = new THREE.Mesh(new THREE.BoxGeometry(corridorWidth + 100, 150, 400), new THREE.MeshBasicMaterial({visible:false}));
+          hitBox.position.y = 75;
+          hitBox.userData = { 
+            id: 'VISION980-HUB', type: 'Mega-Hub Transit Center', 
+            desc: 'Multi-level civic connector spanning the I-980 trench. Reconnecting West Oakland to Downtown.', 
+            camPos: new THREE.Vector3(300, 200, zPos + 300), interiorCamPos: new THREE.Vector3(80, 70, zPos + 120), interiorLookAt: new THREE.Vector3(0, 40, zPos)
+          };
+          group.add(hitBox);
+          interactableObjects.push(hitBox);
+
+          scene.add(group);
+        };
+
+        buildSphere(-800); 
+        buildMegaHub(0);          
+        buildSphere(800);  
+
+        const tGeo = new THREE.BufferGeometry();
+        const tPos = new Float32Array(trafficCount * 3);
+        const tSpeed = new Float32Array(trafficCount);
+        for(let i=0; i<trafficCount; i++) {
+          tPos[i*3] = (Math.random() - 0.5) * cityLimit * 2;
+          tPos[i*3+1] = 2; 
+          tPos[i*3+2] = (Math.random() - 0.5) * cityLimit * 2;
+          tSpeed[i] = Math.random() * 3 + 1;
+        }
+        tGeo.setAttribute('position', new THREE.BufferAttribute(tPos, 3));
+        const tMat = new THREE.PointsMaterial({ color: 0xffffff, size: isMobile ? 3 : 5, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending });
+        trafficParticles = new THREE.Points(tGeo, tMat);
+        scene.add(trafficParticles);
+
+        const updateMousePosition = (clientX, clientY) => {
+          if (!mouse || !mountRef.current) return;
+          const rect = mountRef.current.getBoundingClientRect();
+          mouse.x = ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+          mouse.y = -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+        };
+
+        const handlePointerMove = (event) => {
+          if (!camera || !raycaster || !mouse || isCancelled) return;
+          const clientX = event.touches ? event.touches[0].clientX : event.clientX;
+          const clientY = event.touches ? event.touches[0].clientY : event.clientY;
+          updateMousePosition(clientX, clientY);
+
+          if (modeRef.current && !flightState.isFlying && !interiorRef.current) {
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(interactableObjects);
+            
+            if (intersects.length > 0) {
+              const object = intersects[0].object;
+              if (hoveredObject !== object) {
+                hoveredObject = object;
+                document.body.style.cursor = 'pointer';
+              }
+            } else {
+              if (hoveredObject) {
+                hoveredObject = null;
+                document.body.style.cursor = 'default';
+              }
+            }
+          }
+        };
+
+        const handleInteraction = (event) => {
+          if (!modeRef.current || interiorRef.current || flightState.isFlying || !camera || !raycaster || !mouse || isCancelled) return;
+          
+          if (event.touches && event.touches.length > 0) {
+            updateMousePosition(event.touches[0].clientX, event.touches[0].clientY);
+          }
+
+          raycaster.setFromCamera(mouse, camera);
+          const intersects = raycaster.intersectObjects(interactableObjects);
+          
+          if (intersects.length > 0) {
+            const object = intersects[0].object;
+            if (object.userData && object.userData.type) {
+              onNodeClickRef.current(object.userData);
+              flightState.isFlying = true;
+              if (object.userData.camPos) {
+                 flightState.targetPos.copy(object.userData.camPos);
+              }
+              const tgtLook = new THREE.Vector3();
+              object.getWorldPosition(tgtLook);
+              flightState.targetLookAt.copy(tgtLook);
+            }
+          }
+        };
+
+        if (renderer.domElement) {
+          renderer.domElement.addEventListener('pointermove', handlePointerMove);
+          renderer.domElement.addEventListener('click', handleInteraction);
+        }
+
+        const resize = () => {
+          if (!mountRef.current || !camera || !renderer) return;
+          const width = Math.max(1, mountRef.current.clientWidth || window.innerWidth);
+          const height = Math.max(1, mountRef.current.clientHeight || window.innerHeight);
+          camera.aspect = width / height;
+          camera.updateProjectionMatrix();
+          renderer.setSize(width, height);
+        };
+        window.addEventListener('resize', resize);
+        resize();
+
+        if (labelsContainerRef.current) {
+            labelsContainerRef.current.innerHTML = ''; 
+            mapDataLabels.forEach((data) => {
+                const el = document.createElement('div');
+                const borderColor = data.color.replace('text-', 'border-').replace('400', '600');
+                const bgColor = data.color.replace('text-', 'bg-');
+                
+                el.className = `absolute top-0 left-0 px-3 py-1.5 bg-[#0f172a]/90 backdrop-blur-md border ${borderColor}/50 rounded shadow-lg pointer-events-none whitespace-nowrap transition-opacity duration-100 flex items-center gap-2 font-mono text-[10px] md:text-xs z-10`;
+                el.innerHTML = `
+                    <span class="w-1.5 h-1.5 rounded-full ${data.expired ? 'bg-rose-500' : bgColor + ' animate-pulse'}"></span>
+                    <span class="${data.expired ? 'text-slate-400 line-through' : 'text-slate-200'} font-medium">${data.text}</span>
+                `;
+                labelsContainerRef.current.appendChild(el);
+                labelElements.push({ el, pos: new THREE.Vector3(data.pos[0], data.pos[1], data.pos[2]) });
+            });
+        }
+
+        let podZ = -corridorLength/2;
+        let podSpeed = 45;
+
+        const animate = () => {
+          if (isCancelled || !scene || !camera || !renderer) return;
+          
+          const altitude = camera.position.y;
+          scene.fog.density = Math.max(0.0001, 0.0015 - (altitude * 0.0000008));
+          if(stars) stars.material.opacity = Math.min(1.0, altitude / 800);
+
+          if (interiorRef.current && !wasInInterior) {
+              wasInInterior = true;
+              flightState.isFlying = true;
+              flightState.targetPos.copy(interiorRef.current.interiorCamPos);
+              flightState.targetLookAt.copy(interiorRef.current.interiorLookAt);
+          } else if (!interiorRef.current && wasInInterior) {
+              wasInInterior = false;
+              flightState.isFlying = true;
+              flightState.targetPos.set(camera.position.x + 200, camera.position.y + 150, camera.position.z + 200);
+          }
+
+          if (flightState.isFlying) {
+             controls.enabled = false;
+             camera.position.lerp(flightState.targetPos, 0.04);
+             controls.target.lerp(flightState.targetLookAt, 0.04);
+             controls.update();
+             if (camera.position.distanceTo(flightState.targetPos) < 2) flightState.isFlying = false;
+          } else if (interiorRef.current || hoveredObject || modeRef.current) {
+             controls.enabled = true;
+             controls.update(); 
+          } else {
+             controls.enabled = false;
+             cinematicAngle += 0.0005; 
+             const radius = isMobile ? 800 : 1400;
+             camera.position.x = Math.cos(cinematicAngle) * radius;
+             camera.position.y = 600 + Math.sin(cinematicAngle * 2) * 100;
+             camera.position.z = Math.sin(cinematicAngle) * radius;
+             camera.lookAt(0, 100, 0);
+          }
+
+          if (trafficParticles) {
+            const positions = trafficParticles.geometry.attributes.position.array;
+            for(let i=0; i<trafficCount; i++) {
+              positions[i*3+2] -= tSpeed[i]; 
+              if(positions[i*3+2] < -cityLimit) positions[i*3+2] = cityLimit; 
+            }
+            trafficParticles.geometry.attributes.position.needsUpdate = true;
+          }
+
+          if (podGroup) {
+             podZ += podSpeed;
+             if(podZ > corridorLength/2 || podZ < -corridorLength/2) podSpeed *= -1;
+             podGroup.position.z = podZ;
+          }
+
+          if (labelsContainerRef.current && labelElements.length > 0) {
+              const widthHalf = window.innerWidth / 2;
+              const heightHalf = window.innerHeight / 2;
+              labelElements.forEach(item => {
+                  const vec = item.pos.clone();
+                  vec.project(camera);
+                  if(vec.z > 1 || !modeRef.current) {
+                     item.el.style.opacity = 0;
+                  } else {
+                     const x = (vec.x * widthHalf) + widthHalf;
+                     const y = -(vec.y * heightHalf) + heightHalf;
+                     item.el.style.opacity = 1;
+                     item.el.style.transform = `translate(${x + 10}px, ${y - 20}px)`;
+                  }
+              });
+          }
+
+          renderer.render(scene, camera);
+          animationFrameId = requestAnimationFrame(animate);
+        };
+
+        setIsLoaded(true);
+        setTimeout(() => { if (!isCancelled) animate(); }, 50);
+
+      } catch (error) {
+        console.error("Three.js initialization failed:", error);
+        setIsLoaded(true); 
+      }
+    };
+
+    initThreeJS();
+
+    return () => {
+      isCancelled = true;
+      window.removeEventListener('resize', resize);
+      if (animationFrameId) cancelAnimationFrame(animationFrameId);
+      if (renderer) {
+        if (renderer.domElement) {
+           renderer.domElement.removeEventListener('pointermove', handlePointerMove);
+           renderer.domElement.removeEventListener('click', handleInteraction);
+        }
+        renderer.dispose();
+      }
+      if (mountRef.current && renderer && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement);
+      }
+      if (labelsContainerRef.current) labelsContainerRef.current.innerHTML = '';
+    };
+  }, []); 
+
+  return (
+    <>
+      {!isLoaded && (
+        <div className="absolute inset-0 flex items-center justify-center bg-[#020617] z-50">
+          <div className="text-[#d8833b] font-mono font-bold text-lg flex flex-col items-center tracking-widest uppercase">
+            <Activity className="w-8 h-8 mb-4 animate-spin text-[#d8833b]" />
+            Initializing Vision 980 Engine...
+          </div>
+        </div>
+      )}
+      <div 
+        ref={mountRef} 
+        className={`fixed top-0 left-0 w-full h-full z-0 outline-none transition-opacity duration-1000 ${isExplorationMode ? 'opacity-100' : 'opacity-60 pointer-events-none'}`} 
+        style={{ cursor: isExplorationMode ? 'grab' : 'default', touchAction: isExplorationMode ? 'none' : 'auto' }} 
+      />
+    </>
+  );
+};
+
+
+// --- UI COMPONENTS ---
+const EvoakLogo = () => (
+  <div className="flex items-center text-white font-black text-3xl md:text-[2.5rem] tracking-tight leading-none drop-shadow-md">
+    <span>EV</span>
+    <div 
+      className="w-[1.2rem] h-[1.2rem] md:w-[1.8rem] md:h-[1.8rem] mx-[2px] rounded-full shadow-inner" 
+      style={{ background: 'conic-gradient(#b91c1c 0deg 72deg, #d97706 72deg 144deg, #15803d 144deg 216deg, #78350f 216deg 288deg, #b91c1c 288deg 360deg)' }}
+    ></div>
+    <span>AK</span>
+  </div>
+);
+
+const DataMatrixModal = ({ asset, onClose }) => {
+  const [aiInsight, setAiInsight] = useState("");
+  const [isGenerating, setIsGenerating] = useState(false);
+
+  useEffect(() => {
+    // Clear previous insight when a new asset is viewed
+    setAiInsight("");
+  }, [asset]);
+
+  const handleRunAnalysis = async () => {
+    setIsGenerating(true);
+    const prompt = `Analyze the following proposed architectural asset for the Vision 980 project in Oakland, CA:\nType: ${asset.type}\nDescription: ${asset.desc}\n\nProvide a concise, 3-sentence structural and community impact recommendation. Focus on displacement protection, cultural enrichment, and sustainable infrastructure.`;
+    const systemInstruction = "You are the EVOAK AI Spatial Intelligence Engine. Provide highly analytical, professional urban planning insights. Use an authoritative, forward-thinking tone. Do not use markdown formatting like asterisks or bold text in your response.";
+    
+    const result = await generateGeminiContent(prompt, systemInstruction);
+    setAiInsight(result);
+    setIsGenerating(false);
+  };
+
+  if (!asset) return null;
+  
+  return (
+    <div className="fixed inset-0 z-[100] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 md:p-8 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-y-auto overflow-x-hidden relative flex flex-col">
+        
+        <div className="sticky top-0 bg-white/95 backdrop-blur border-b border-slate-200 px-8 py-5 flex justify-between items-center z-10">
+           <div className="flex items-center gap-4">
+              <div className="p-2 bg-[#f9f6f0] text-[#d8833b] rounded-lg">
+                <Database size={20} />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-[#1a3632] leading-none">Impact Analysis Matrix</h2>
+                <p className="text-xs text-slate-500 font-medium uppercase tracking-widest mt-1">Asset: {asset.id}</p>
+              </div>
+           </div>
+           <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
+              <X size={24} className="text-slate-400" />
+           </button>
+        </div>
+
+        <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-8">
+           <div className="space-y-6">
+              <div>
+                 <h3 className="text-2xl font-black text-slate-900 tracking-tight mb-2">{asset.type}</h3>
+                 <p className="text-slate-600 leading-relaxed">{asset.desc}</p>
+              </div>
+              
+              <div className="bg-[#f9f6f0] border border-slate-200 rounded-xl p-6">
+                <h4 className="flex items-center gap-2 font-bold text-[#1a3632] mb-4">
+                   <ShieldCheck size={18} className="text-[#d8833b]"/> Displacement Protection
+                </h4>
+                <p className="text-sm text-slate-600 leading-relaxed mb-4">
+                   This architectural integration provides multi-zoning capabilities, ensuring existing residents and legacy businesses are guaranteed equitable placement within the new civic framework.
+                </p>
+                <div className="w-full bg-slate-200 rounded-full h-2">
+                   <div className="bg-[#1a3632] h-2 rounded-full" style={{ width: '85%' }}></div>
+                </div>
+                <p className="text-xs text-slate-500 mt-2 font-bold text-right">85% Community Retention</p>
+              </div>
+           </div>
+
+           <div className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                 <div className="border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <BarChart3 size={24} className="text-[#d8833b] mb-3" />
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Feasibility</p>
+                    <p className="text-2xl font-black text-slate-900 mt-1">High</p>
+                 </div>
+                 <div className="border border-slate-200 rounded-xl p-5 shadow-sm">
+                    <Zap size={24} className="text-[#d8833b] mb-3" />
+                    <p className="text-xs text-slate-500 font-bold uppercase tracking-wider">Energy Output</p>
+                    <p className="text-2xl font-black text-slate-900 mt-1">Net-Zero</p>
+                 </div>
+              </div>
+              
+              <div className="bg-[#1a3632] rounded-xl p-6 text-white shadow-xl">
+                 <h4 className="font-bold text-lg mb-4 flex items-center gap-2">
+                    <Zap size={20} className="text-[#d8833b]"/> Live AI Impact Analysis
+                 </h4>
+                 {aiInsight ? (
+                   <p className="text-sm opacity-90 leading-relaxed mb-6 font-mono bg-[#0f172a] p-4 rounded-lg border border-emerald-900/50">
+                     {aiInsight}
+                   </p>
+                 ) : (
+                   <p className="text-sm opacity-70 leading-relaxed mb-6">
+                     Ready to analyze structural feasibility, displacement impact, and net-zero energy outcomes for this specific asset. Click below to initialize the AI insight engine.
+                   </p>
+                 )}
+                 <button 
+                   onClick={handleRunAnalysis}
+                   disabled={isGenerating}
+                   className="w-full bg-[#d8833b] text-white py-3 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-[#c2722f] transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+                 >
+                   {isGenerating ? <><Activity size={16} className="animate-spin" /> Processing...</> : "✨ Run AI Analysis"}
+                 </button>
+              </div>
+           </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
+const ContactModal = ({ onClose }) => {
+  const [status, setStatus] = useState('idle');
+  const [message, setMessage] = useState('');
+  const [isBrainstorming, setIsBrainstorming] = useState(false);
+
+  const handleBrainstorm = async () => {
+    setIsBrainstorming(true);
+    const prompt = "Draft a short, 3-sentence message to the EVOAK Community Development team expressing interest in volunteering or partnering. Suggest one creative idea involving local arts, urban design, or community workshops.";
+    const result = await generateGeminiContent(prompt);
+    setMessage(result.trim());
+    setIsBrainstorming(false);
+  };
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setStatus('loading');
+    
+    const form = e.target;
+    const data = new FormData(form);
+    
+    // !!! REPLACE THIS URL WITH YOUR DEPLOYED GOOGLE APPS SCRIPT WEB APP URL !!!
+    const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/YOUR_SCRIPT_ID/exec"; 
+
+    try {
+      await fetch(GOOGLE_SCRIPT_URL, {
+        method: 'POST',
+        body: data,
+        mode: 'no-cors' // Crucial for bypassing browser CORS blocks when sending to Google Forms/Sheets
+      });
+      
+      setStatus('success');
+      setTimeout(() => onClose(), 3000);
+    } catch (error) {
+      console.error('Error submitting form:', error);
+      setStatus('error');
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[200] bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md relative flex flex-col overflow-hidden">
+        <div className="bg-[#1a3632] p-6 text-white flex justify-between items-center">
+          <h2 className="text-xl font-bold tracking-tight">Keep in Touch</h2>
+          <button onClick={onClose} className="text-emerald-100 hover:text-white transition-colors"><X size={20} /></button>
+        </div>
+        <div className="p-6 md:p-8">
+          {status === 'success' ? (
+            <div className="text-center py-8 animate-fade-in-up">
+              <div className="w-16 h-16 bg-[#10b981]/10 rounded-full flex items-center justify-center mx-auto mb-4">
+                <ShieldCheck size={32} className="text-[#10b981]" />
+              </div>
+              <h3 className="text-2xl font-black text-slate-900 mb-2">Message Sent!</h3>
+              <p className="text-slate-600 font-medium">Thank you for your interest. We'll be in touch soon.</p>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in">
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Full Name</label>
+                <input type="text" name="Name" required className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg p-3 text-sm outline-none focus:border-[#d8833b] transition-colors shadow-sm" placeholder="Jane Doe" />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Email Address</label>
+                <input type="email" name="Email" required className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg p-3 text-sm outline-none focus:border-[#d8833b] transition-colors shadow-sm" placeholder="jane@example.com" />
+              </div>
+              <div>
+                <div className="flex justify-between items-end mb-2">
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest">Message</label>
+                  <button type="button" onClick={handleBrainstorm} disabled={isBrainstorming || status === 'loading'} className="text-[10px] text-[#d8833b] font-bold hover:text-[#c2722f] uppercase tracking-widest flex items-center gap-1 disabled:opacity-50">
+                    {isBrainstorming ? <Activity size={12} className="animate-spin" /> : "✨ Brainstorm Idea"}
+                  </button>
+                </div>
+                <textarea name="Message" required rows="4" value={message} onChange={(e) => setMessage(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-lg p-3 text-sm outline-none focus:border-[#d8833b] transition-colors shadow-sm resize-none" placeholder="How would you like to get involved?"></textarea>
+              </div>
+              <button type="submit" disabled={status === 'loading'} className="w-full mt-2 bg-[#d8833b] text-white py-4 rounded-lg font-bold text-xs uppercase tracking-widest hover:bg-[#c2722f] transition-colors shadow-md disabled:opacity-70 flex justify-center items-center gap-2">
+                {status === 'loading' ? <><Activity size={16} className="animate-spin" /> Sending...</> : 'Submit Details'}
+              </button>
+              {status === 'error' && <p className="text-rose-500 text-xs text-center mt-2 font-bold animate-fade-in">Error sending message. Please try again.</p>}
+            </form>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// --- MAIN APP COMPONENT ---
+export default function App() {
+  const [isExplorationMode, setIsExplorationMode] = useState(false);
+  const [selectedAsset, setSelectedAsset] = useState(null);
+  const [interiorTarget, setInteriorTarget] = useState(null); 
+  const [showDataMatrix, setShowDataMatrix] = useState(false);
+  const [isContactOpen, setIsContactOpen] = useState(false);
+  const labelsContainerRef = useRef(null);
+
+  useEffect(() => {
+    if (!document.querySelector('meta[name="viewport"]')) {
+       const meta = document.createElement('meta');
+       meta.name = "viewport";
+       meta.content = "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no";
+       document.head.appendChild(meta);
+    }
+  }, []);
+
+  const handleEnterInterior = () => {
+      setInteriorTarget(selectedAsset);
+  };
+
+  const handleExitInterior = () => {
+      setInteriorTarget(null);
+  };
+
+  return (
+    <div className="min-h-screen bg-[#f9f6f0] text-slate-900 font-sans selection:bg-[#d8833b] selection:text-white overflow-x-hidden relative">
+      <style dangerouslySetInnerHTML={{__html: `
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;700&display=swap');
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Inter', sans-serif; overflow-x: hidden; }
+        .font-mono { font-family: 'JetBrains Mono', monospace; }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        .animate-fade-in-up { animation: fadeInUp 0.6s ease-out forwards; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+      `}} />
+
+      {/* BACKGROUND 3D ENGINE */}
+      <ProprietarySpatialEngine 
+        labelsContainerRef={labelsContainerRef} 
+        isExplorationMode={isExplorationMode}
+        onNodeClick={(asset) => { if(!interiorTarget) setSelectedAsset(asset); }}
+        interiorTarget={interiorTarget}
+      />
+      
+      <div ref={labelsContainerRef} className={`fixed inset-0 pointer-events-none z-30 transition-opacity duration-500 ${isExplorationMode ? 'opacity-100' : 'opacity-0'}`} />
+
+      {/* --- SCROLLABLE LANDING PAGE --- */}
+      <div className={`relative z-10 transition-all duration-700 ${isExplorationMode ? 'opacity-0 pointer-events-none h-screen overflow-hidden scale-105' : 'opacity-100 min-h-screen scale-100'}`}>
+        
+        <header className="w-full bg-[#d8833b] px-6 md:px-12 py-4 md:py-5 flex justify-between items-center z-50 sticky top-0 shadow-md transition-all">
+          <EvoakLogo />
+          <nav className="hidden md:flex items-center gap-10 text-white font-medium text-[15px]">
+            <a href="#home" className="hover:opacity-80 transition-opacity">Home</a>
+            <a href="#about" className="hover:opacity-80 transition-opacity">About</a>
+            <div className="relative group py-2">
+              <div className="flex items-center gap-1 cursor-pointer hover:opacity-80 transition-opacity">
+                Programs <ChevronDown size={14} className="group-hover:rotate-180 transition-transform duration-300" />
+              </div>
+              <div className="absolute top-full left-1/2 -translate-x-1/2 w-72 bg-white rounded-lg shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 text-slate-800 flex flex-col overflow-hidden border border-slate-100 mt-2">
+                 <a href="#policy" className="px-5 py-3 hover:bg-slate-50 text-sm font-bold border-b border-slate-100 transition-colors">Arts Policy, Research and Advocacy</a>
+                 <a href="#management" className="px-5 py-3 hover:bg-slate-50 text-sm font-bold border-b border-slate-100 transition-colors">Program Design and Management</a>
+                 <a href="#cultural" className="px-5 py-3 hover:bg-slate-50 text-sm font-bold transition-colors">Cultural Programming</a>
+              </div>
+            </div>
+            <a href="#events" className="hover:opacity-80 transition-opacity">Events</a>
+          </nav>
+          <button onClick={() => setIsContactOpen(true)} className="hidden sm:block bg-white text-slate-900 font-bold text-[10px] md:text-xs uppercase tracking-widest px-6 py-3 rounded-full hover:bg-slate-100 shadow-md transition-all">
+            Keep in Touch
+          </button>
+        </header>
+
+        <section id="home" className="relative pt-16 md:pt-24 pb-32 md:pb-48 px-6 md:px-16 scroll-mt-20 overflow-hidden">
+          <div className="absolute inset-0 bg-[#1a3632] opacity-90 z-0"></div>
+          <div className="max-w-screen-xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 md:gap-16 items-center relative z-10">
+            <div className="lg:col-span-7 text-white animate-fade-in-up">
+              <h1 className="text-4xl md:text-[4rem] font-extrabold leading-[1.1] mb-6 tracking-tight drop-shadow-lg">
+                Strengthening and Empowering neighbors through Creative Community Development
+              </h1>
+              <p className="text-lg md:text-2xl font-bold opacity-90 tracking-wide mb-8 md:mb-0 text-emerald-100">
+                Championing the arts and expanding possibilities
+              </p>
+            </div>
+            <div className="lg:col-span-5 relative animate-fade-in-up" style={{ animationDelay: '0.2s' }}>
+              <div className="absolute inset-0 bg-[#d8833b] rounded-[1.5rem] md:rounded-[2rem] translate-x-3 translate-y-3 md:translate-x-6 md:translate-y-6"></div>
+              <img 
+                src="https://images.unsplash.com/photo-1573164713988-8665fc963095?ixlib=rb-4.0.3&auto=format&fit=crop&w=1000&q=80" 
+                alt="Community Members" 
+                className="relative rounded-[1.5rem] md:rounded-[2rem] z-10 w-full h-auto object-cover shadow-2xl aspect-[4/3] border-4 border-white/10"
+              />
+            </div>
+          </div>
+          <div className="absolute bottom-0 left-0 w-full h-32 bg-gradient-to-t from-[#f9f6f0] to-transparent z-10"></div>
+        </section>
+
+        <section id="about" className="relative px-6 md:px-16 py-16 md:py-24 max-w-screen-xl mx-auto scroll-mt-10">
+          
+          {/* EVOAK Origins Section */}
+          <div className="mb-20 md:mb-32 grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-16 items-center">
+            <div className="order-2 md:order-1 bg-[#1a3632] p-8 md:p-12 rounded-3xl shadow-2xl border border-emerald-900/50 transform hover:-translate-y-1 transition-transform relative overflow-hidden">
+               <div className="absolute -top-16 -right-16 w-48 h-48 bg-[#d8833b] opacity-20 rounded-full blur-[40px]"></div>
+               <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-[#5e24ff] opacity-10 rounded-full blur-[40px]"></div>
+               <p className="text-base md:text-lg text-emerald-50 font-medium leading-relaxed relative z-10">
+                <strong className="text-white font-black tracking-wider text-xl block mb-2">EVOAK!</strong> 
+                Was founded in 2002 as SOA Village Housing from work that started in 1994 under the name Support Oakland Artists (SOA). SOA began as a youth development organization providing art, design, computer, and entrepreneurship training for young people as a mentoring and diversion program. 
+                <br/><br/>
+                The organization’s work grew to include public programming and supporting the cultural arts ecosystem through fiscal sponsorship, technical assistance, and progressive arts policy development.
+              </p>
+            </div>
+            <div className="order-1 md:order-2 md:pl-4">
+              <span className="text-[#d8833b] font-bold text-[10px] md:text-xs tracking-widest uppercase mb-3 md:mb-4 flex items-center gap-2">
+                 <Heart size={16} /> Our Mission & History
+              </span>
+              <h2 className="text-3xl md:text-5xl font-black text-[#1a3632] tracking-tighter leading-tight drop-shadow-sm mb-6">
+                Empowering Local Art <br className="hidden lg:block"/>& Artists
+              </h2>
+              <p className="text-slate-600 text-lg md:text-xl font-medium leading-relaxed border-l-4 border-[#d8833b] pl-5">
+                Dedicated to advancing a creative community through meaningful engagement and cultural enrichment.
+              </p>
+            </div>
+          </div>
+
+          {/* Spatial Intelligence Section */}
+          <div className="mb-12 md:mb-20 grid grid-cols-1 md:grid-cols-2 gap-8 md:gap-12 items-end">
+            <div>
+              <span className="text-[#d8833b] font-bold text-[10px] md:text-xs tracking-widest uppercase mb-3 md:mb-4 flex items-center gap-2">
+                <MapIcon size={16} /> Award-Winning Spatial Intelligence
+              </span>
+              <h2 className="text-3xl md:text-6xl font-black text-[#1a3632] tracking-tighter leading-tight drop-shadow-sm">
+                Modern Architecture <br className="hidden md:block"/>& Urban Design
+              </h2>
+            </div>
+            <div className="bg-[#0f172a] p-6 md:p-8 rounded-2xl shadow-xl border border-slate-800 transform hover:-translate-y-1 transition-transform">
+              <p className="text-base md:text-lg text-white font-medium leading-relaxed">
+                We bring a rare combination of community-driven design and structural expertise to every project. We partner with cities to create modern, site-responsive infrastructure rooted in craft, material integrity, and long-term livability.
+              </p>
+            </div>
+          </div>
+
+          <div id="programs" className="border-t border-slate-300 pt-12 md:pt-16 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-8 md:gap-12 mb-16 md:mb-20 scroll-mt-24">
+            
+            <a href="https://docs.google.com/document/d/1vAtxuD3tyjj8FefIFEmHIvQWXDN1Zu6TZ3i9s5131Rw/edit?usp=sharing" target="_blank" rel="noopener noreferrer" className="group flex flex-col justify-between bg-[#0f172a] rounded-2xl p-8 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 border border-slate-800 h-full">
+              <div>
+                <div className="w-12 h-12 rounded-full bg-[#10b981]/10 flex items-center justify-center mb-6 group-hover:bg-[#10b981]/20 transition-colors">
+                  <Train size={24} className="text-[#10b981]" />
+                </div>
+                <h3 className="text-xl md:text-2xl font-black text-white mb-3 tracking-tight">Hyperloop Integration</h3>
+                <p className="text-sm md:text-base text-slate-300 font-medium leading-relaxed">Replacing legacy freeways with high-speed, low-pressure magnetic propulsion tubes.</p>
+              </div>
+              <div className="mt-8 flex items-center gap-2 text-[#10b981] font-bold text-[10px] md:text-xs uppercase tracking-widest group-hover:gap-3 transition-all">
+                View Google Doc <ArrowRight size={14} />
+              </div>
+            </a>
+            
+            <a href="https://docs.google.com/document/d/1DWc49L4cfB4Sf8IIMpa2VSm6gpFxmCkL52bTS3OJHn0/edit?usp=sharing" target="_blank" rel="noopener noreferrer" className="group flex flex-col justify-between bg-[#0f172a] rounded-2xl p-8 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 border border-slate-800 h-full">
+              <div>
+                <div className="w-12 h-12 rounded-full bg-[#38bdf8]/10 flex items-center justify-center mb-6 group-hover:bg-[#38bdf8]/20 transition-colors">
+                  <Globe size={24} className="text-[#38bdf8]" />
+                </div>
+                <h3 className="text-xl md:text-2xl font-black text-white mb-3 tracking-tight">The Cultural Sphere</h3>
+                <p className="text-sm md:text-base text-slate-300 font-medium leading-relaxed">Massive geodesic domes providing civic space, drawing inspiration from global architectural icons.</p>
+              </div>
+              <div className="mt-8 flex items-center gap-2 text-[#38bdf8] font-bold text-[10px] md:text-xs uppercase tracking-widest group-hover:gap-3 transition-all">
+                View Google Doc <ArrowRight size={14} />
+              </div>
+            </a>
+
+            <a href="https://docs.google.com/document/d/1124jMysa36kSr-DcSssS-VlR1efN7JmA6iEpMbz1kMw/edit?usp=sharing" target="_blank" rel="noopener noreferrer" className="group sm:col-span-2 md:col-span-1 flex flex-col justify-between bg-[#0f172a] rounded-2xl p-8 shadow-xl hover:shadow-2xl hover:-translate-y-2 transition-all duration-300 border border-slate-800 h-full">
+              <div>
+                <div className="w-12 h-12 rounded-full bg-[#d8833b]/10 flex items-center justify-center mb-6 group-hover:bg-[#d8833b]/20 transition-colors">
+                  <Building size={24} className="text-[#d8833b]" />
+                </div>
+                <h3 className="text-xl md:text-2xl font-black text-white mb-3 tracking-tight">Multi-Level Hubs</h3>
+                <p className="text-sm md:text-base text-slate-300 font-medium leading-relaxed">Sweeping canopies over comprehensive transit, co-working, and research centers.</p>
+              </div>
+              <div className="mt-8 flex items-center gap-2 text-[#d8833b] font-bold text-[10px] md:text-xs uppercase tracking-widest group-hover:gap-3 transition-all">
+                View Google Doc <ArrowRight size={14} />
+              </div>
+            </a>
+            
+          </div>
+
+          {/* --- NEW ARTS POLICY SECTION --- */}
+          <div id="our-work" className="mb-20 md:mb-24 pt-16 border-t border-slate-300 scroll-mt-24">
+            <span className="text-[#d8833b] font-bold text-[10px] md:text-xs tracking-widest uppercase mb-3 md:mb-4 flex items-center gap-2">
+              <Briefcase size={16} /> Arts Policy, Research and Advocacy
+            </span>
+            <h2 className="text-3xl md:text-5xl font-black text-[#1a3632] tracking-tighter leading-tight drop-shadow-sm mb-6">
+              Our Work
+            </h2>
+            <div className="text-lg text-slate-800 font-semibold leading-relaxed max-w-4xl mb-12 space-y-6">
+              <p>Fostering a vibrant creative ecosystem, EVOAK! aims to enrich the local cultural landscape, empower artists, and engage citizens in dynamic experiences, through policy design, data, and strategic partnerships. EVOAK! paves the way for the arts to emerge as a catalyst for sustainable growth, and fostering resilient communities.</p>
+              <p>EVOAK! is a creative community development organization that leverages the arts, innovation and the collaborative spirit to transform and transcend the challenges society faces.</p>
+            </div>
+
+            <div className="max-w-3xl mb-16">
+              {/* Column 1 */}
+              <div id="policy" className="bg-white p-6 md:p-8 rounded-2xl shadow-lg border border-slate-200 hover:shadow-xl transition-shadow scroll-mt-24">
+                <h4 className="text-[#1a3632] font-black text-lg md:text-xl mb-4 border-b-2 border-[#d8833b] pb-2 inline-block">Arts Policy, Research & Advocacy</h4>
+                <ul className="space-y-3 text-slate-600 text-sm font-medium">
+                  <li className="flex items-start gap-2"><ArrowRight size={14} className="text-[#d8833b] mt-1 shrink-0"/> Equitable Advancement of the Creative Economy</li>
+                  <li className="flex items-start gap-2"><ArrowRight size={14} className="text-[#d8833b] mt-1 shrink-0"/> Creative Community Development</li>
+                  <li className="flex items-start gap-2"><ArrowRight size={14} className="text-[#d8833b] mt-1 shrink-0"/> EVOAK: East Oakland Reclaiming Our Worth (Wallace Foundation Research)</li>
+                  <li className="flex items-start gap-2"><ArrowRight size={14} className="text-[#d8833b] mt-1 shrink-0"/> Community building, governance, policy & research</li>
+                  <li className="flex items-start gap-2"><ArrowRight size={14} className="text-[#d8833b] mt-1 shrink-0"/> Voter Education and mobilization</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* --- PROGRAM DESIGN AND MANAGEMENT SECTION (Full Width Layout matching Screenshot) --- */}
+        <section id="management" className="relative scroll-mt-20 w-full mb-20 z-20">
+          <div className="relative pt-24 pb-48 px-6 md:px-16 bg-[#0f172a]" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 85%, 0 100%)' }}>
+            <div className="absolute inset-0 opacity-40">
+              <img src="https://images.unsplash.com/photo-1531498860502-7c67cf02f657?q=80&w=2000&auto=format&fit=crop" alt="Community Workshop" className="w-full h-full object-cover mix-blend-luminosity" />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-[#1a3632]/95 to-[#0f172a]/90 z-0"></div>
+            <div className="relative z-10 max-w-screen-xl mx-auto">
+              <h2 className="text-3xl md:text-5xl font-black text-white tracking-tighter mb-6">Program Design and Management</h2>
+              <p className="text-sm md:text-base text-white drop-shadow-md leading-relaxed max-w-4xl font-semibold">
+                This dynamic area of our work aims to fortify cultural development projects across the Bay Area and beyond. By providing program design and development, technical assistance, fiscal sponsorship, marketing and communication and culturally resonant community outreach, EVOAK enables local artists, cultural innovators, community leaders, government and philanthropy to cultivate impactful programming that enriches the cultural landscape. By fostering creativity, collaboration, and advancing equity in the arts, our Capacity Building initiative aims to build resilient communities and establish arts hubs as a driver of diverse cultural expression.
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 md:px-16 -mt-32 relative z-20">
+            <div className="max-w-screen-xl mx-auto relative">
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 md:gap-12 relative z-10">
+                <div className="lg:col-span-4 pt-4 md:pt-32">
+                  <h3 className="text-3xl md:text-4xl font-black text-[#1a3632]">Impact areas</h3>
+                </div>
+                <div className="lg:col-span-8 grid grid-cols-1 sm:grid-cols-2 gap-6">
+                  {/* Card 1 */}
+                  <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                     <div className="mb-4 text-[#1a3632]"><Check size={20} strokeWidth={3} /></div>
+                     <h4 className="font-bold text-[#1a3632] text-lg mb-4">Capacity-Building:</h4>
+                     <p className="text-slate-500 text-xs md:text-sm leading-relaxed">Providing tailored and prescriptive resources to strengthen the impact and sustainability of cultural organizations and initiatives.</p>
+                  </div>
+                  {/* Card 2 */}
+                  <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                     <div className="mb-4 text-[#1a3632]"><Check size={20} strokeWidth={3} /></div>
+                     <h4 className="font-bold text-[#1a3632] text-lg mb-4">Community Cohesion:</h4>
+                     <p className="text-slate-500 text-xs md:text-sm leading-relaxed">Fostering connections and partnerships that amplify cultural voices and foster community engagement.</p>
+                  </div>
+                  {/* Card 3 */}
+                  <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform sm:col-span-2 md:col-span-1">
+                     <div className="mb-4 text-[#1a3632]"><Check size={20} strokeWidth={3} /></div>
+                     <h4 className="font-bold text-[#1a3632] text-lg mb-4">Cultural Enrichment:</h4>
+                     <p className="text-slate-500 text-xs md:text-sm leading-relaxed">Enhancing the vibrancy and diversity of cultural institutions and surrounding areas through innovative arts initiatives.</p>
+                  </div>
+                </div>
+              </div>
+              
+              {/* Decorative Circle matching screenshot */}
+              <div className="absolute right-[-8%] top-[10%] w-48 h-48 rounded-full border-[30px] border-[#d8833b] opacity-90 hidden lg:block z-0 pointer-events-none mix-blend-multiply" style={{ clipPath: 'polygon(50% 0%, 100% 0, 100% 100%, 50% 100%)', backgroundImage: 'conic-gradient(#1a3632 90deg, transparent 90deg, transparent 180deg, #b91c1c 180deg, transparent 270deg)' }}></div>
+            </div>
+          </div>
+        </section>
+
+        {/* --- NEW CULTURAL PROGRAMMING SECTION --- */}
+        <section id="cultural" className="relative scroll-mt-20 w-full mb-20 z-20">
+          <div className="relative pt-24 pb-48 px-6 md:px-16 bg-[#0f172a]" style={{ clipPath: 'polygon(0 0, 100% 0, 100% 85%, 0 100%)' }}>
+            <div className="absolute inset-0 opacity-40">
+              <img src="https://images.unsplash.com/photo-1499781350541-7783f6c6a0c8?q=80&w=2000&auto=format&fit=crop" alt="Cultural Mural" className="w-full h-full object-cover mix-blend-luminosity" />
+            </div>
+            <div className="absolute inset-0 bg-gradient-to-r from-[#1a3632]/95 to-[#0f172a]/90 z-0"></div>
+            <div className="relative z-10 max-w-screen-xl mx-auto">
+              <h2 className="text-3xl md:text-5xl font-black tracking-tighter mb-6 inline-block">
+                <span className="bg-[#d8833b] text-[#1a3632] px-3 py-1 box-decoration-clone leading-snug">Cultural Programming and Exhibitions</span>
+              </h2>
+              <p className="text-sm md:text-base text-white drop-shadow-md leading-relaxed max-w-4xl font-semibold mt-4">
+                This vibrant initiative celebrates and showcases cultural diversity across the Bay Area region. Through curated exhibitions, immersive programs, and dynamic events, EVOAK provides a platform for local artists, cultural innovators, and community leaders to share their work with broader audiences. By fostering creativity, collaboration, and culturally resonant storytelling, these programs enrich the cultural fabric of Oakland and its surrounding areas. With a commitment to advancing equity in the arts, our Cultural Programming and Exhibitions initiative transforms the Bay Area into a thriving hub of diverse artistic expression and community engagement.
+              </p>
+            </div>
+          </div>
+
+          <div className="px-6 md:px-16 -mt-32 relative z-20">
+            <div className="max-w-screen-xl mx-auto relative">
+              <h3 className="text-3xl md:text-4xl font-black text-[#1a3632] text-center mb-10 relative z-10">Impact areas</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 relative z-10">
+                {/* Card 1 */}
+                <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                   <h4 className="font-bold text-[#1a3632] text-lg mb-4">EVOAK!: Reclaiming Our Worth</h4>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed">EVOAK!: Reclaiming Our Worth is a transformative Wallace Foundation-funded research and implementation initiative leveraging the unique cultural assets and resources of East Oakland's Black community to promote comprehensive creative community development, belonging, and cultural preservation. The project seeks to create transformative outcomes for East Oakland and serve as a model for similar communities nationwide by centering community voices and institutional resources.</p>
+                </div>
+                {/* Card 2 */}
+                <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                   <h4 className="font-bold text-[#1a3632] text-lg mb-4">Mission 980: Re-imagining a more equitable West Oakland</h4>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed mb-2">Community building, governance, policy & research</p>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed font-bold">980 Freeway Block Party</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+                {/* Card 3 */}
+                <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                   <h4 className="font-bold text-[#1a3632] text-lg mb-4">ArtistSpeak.org</h4>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed">I'm Finna' Vote! is a non-partisan voter education forum featuring an intergenerational group of Oakland residents discussing their priority issues and sharing their thoughts on the initiatives that impact Oakland.</p>
+                </div>
+                {/* Card 4 */}
+                <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                   <h4 className="font-bold text-[#1a3632] text-lg mb-4">Black Women's Art Collective</h4>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed">Second Saturday</p>
+                </div>
+                {/* Card 5 */}
+                <div className="bg-white p-8 rounded-sm shadow-xl border border-slate-100 flex flex-col hover:-translate-y-1 transition-transform">
+                   <h4 className="font-bold text-[#1a3632] text-lg mb-4">Art of Wellness</h4>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed mb-2">Black Cultural Zone Sisterhood Circle</p>
+                   <p className="text-slate-500 text-xs md:text-sm leading-relaxed font-bold">Erica and Alice</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* --- LOWER SECTIONS (CTA & Experience) --- */}
+        <section className="relative px-6 md:px-16 py-8 max-w-screen-xl mx-auto z-10">
+            <div className="bg-[#1a3632] text-white p-8 md:p-12 rounded-3xl shadow-2xl border border-emerald-900/50 relative overflow-hidden flex flex-col md:flex-row items-center gap-8 justify-between mb-16">
+              <div className="absolute -top-16 -right-16 w-48 h-48 bg-[#d8833b] opacity-20 rounded-full blur-[40px]"></div>
+              <div className="absolute -bottom-16 -left-16 w-48 h-48 bg-[#5e24ff] opacity-10 rounded-full blur-[40px]"></div>
+              <div className="relative z-10 max-w-2xl">
+                <h3 className="text-2xl md:text-3xl font-black mb-4 drop-shadow-sm">Ready to make a difference?</h3>
+                <p className="text-emerald-50/90 mb-4 text-sm leading-relaxed">
+                  Our Policy, Research and Advocacy initiatives encapsulate a commitment to leverage the arts as a catalyst for positive change, ensuring that local communities serve as a beacon of creativity and diversity. EVOAK shares a commitment to nurturing a thriving cultural ecosystem that celebrates diversity, stimulates economic growth, and fosters a sense of belonging across the arts community.
+                </p>
+                <p className="text-white text-sm leading-relaxed font-bold">
+                  Fill out the form below to receive updates and information about upcoming programs, events, and volunteer opportunities. Join us in painting a brighter future through the transformative power of the arts.
+                </p>
+              </div>
+              <div className="relative z-10 shrink-0 w-full md:w-auto">
+                <button onClick={() => setIsContactOpen(true)} className="w-full md:w-auto bg-[#d8833b] text-white px-8 py-4 rounded-full font-bold text-[10px] md:text-xs uppercase tracking-widest hover:bg-[#c2722f] transition-all shadow-xl hover:shadow-2xl flex items-center justify-center gap-2 transform hover:-translate-y-1">
+                  Contact Us
+                </button>
+              </div>
+            </div>
+
+          <div className="bg-white border border-slate-200 p-8 md:p-20 text-center relative overflow-hidden flex flex-col items-center rounded-3xl shadow-2xl">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[#d8833b] opacity-10 rounded-full blur-[100px]"></div>
+            <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#1a3632] opacity-10 rounded-full blur-[100px]"></div>
+            
+            <Globe className="text-[#d8833b] w-12 h-12 md:w-16 md:h-16 mb-6 md:mb-8 drop-shadow-md" />
+            <h3 className="text-3xl md:text-5xl font-black text-[#1a3632] mb-4 md:mb-6 tracking-tight relative z-10">Experience the Physical Model</h3>
+            <p className="text-base md:text-lg text-slate-600 max-w-2xl mx-auto mb-10 font-medium relative z-10">
+              Launch our proprietary 3D rendering engine. Explore the Hyperloop corridor, enter the Spherical Dome, and view the Transit Hub from the inside in a hyper-realistic environment.
+            </p>
+            <button 
+              onClick={() => setIsExplorationMode(true)}
+              className="bg-[#1a3632] text-white px-10 md:px-12 py-5 md:py-6 font-bold text-xs md:text-sm tracking-widest uppercase hover:bg-[#112421] transition-all duration-300 inline-flex items-center gap-3 shadow-xl hover:shadow-2xl rounded-full relative z-10 transform hover:-translate-y-1"
+            >
+              Initialize Diorama <ArrowUpRight size={20} />
+            </button>
+          </div>
+        </section>
+
+        <footer id="events" className="bg-[#1a3632] py-12 md:py-16 px-6 text-center border-t border-[#0f172a] mt-10 scroll-mt-10 relative overflow-hidden">
+          {/* Subtle background glow for premium feel */}
+          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-lg h-32 bg-[#d8833b] opacity-10 blur-[80px] rounded-full pointer-events-none"></div>
+
+          <div className="flex justify-center mb-6 md:mb-8 relative z-10"><EvoakLogo /></div>
+          
+          <p className="text-white font-bold max-w-3xl mx-auto mb-8 text-sm md:text-base leading-relaxed relative z-10">
+            Together, we can empower our community, enrich our cultural heritage, and create lasting positive change. Thank you for your support and commitment to the arts!
+          </p>
+          
+          <div className="text-emerald-100/80 font-medium text-xs md:text-sm mb-10 space-y-1 relative z-10">
+            <p className="font-bold text-[#d8833b] tracking-widest uppercase text-[10px] mb-2">The Mothership:</p>
+            <p>3718 MacArthur Blvd, East Oakland, CA 94619</p>
+            <p className="pt-2">EVOAK!, a 501(C)3 nonprofit corporation</p>
+            <p>EIN# 01-0730431</p>
+          </div>
+
+          <p className="text-emerald-100/50 font-medium text-[10px] md:text-xs mb-2 relative z-10">© 2026 EVOAK Community Development. All rights reserved.</p>
+          <p className="text-[#d8833b] font-bold text-[8px] md:text-[10px] uppercase tracking-[0.2em] relative z-10">Interactive Spatial Architecture By KINGYG-HRG LLC</p>
+        </footer>
+      </div>
+
+      {/* --- DATA MATRIX MODAL --- */}
+      {showDataMatrix && (
+        <DataMatrixModal asset={selectedAsset} onClose={() => setShowDataMatrix(false)} />
+      )}
+
+      {/* --- CONTACT MODAL --- */}
+      {isContactOpen && (
+        <ContactModal onClose={() => setIsContactOpen(false)} />
+      )}
+
+      {/* --- EXPLORATION MODE HUD (DARK MODE) --- */}
+      {isExplorationMode && !showDataMatrix && (
+        <div className="absolute inset-0 z-40 pointer-events-none flex flex-col justify-between animate-fade-in">
+          <div className="pointer-events-auto">
+             <nav className="w-full bg-[#0f172a]/90 backdrop-blur-md border-b border-slate-700/50 px-6 py-4 flex justify-between items-center shadow-lg">
+                <div className="flex items-center gap-8">
+                    <EvoakLogo />
+                    <div className="hidden lg:flex items-center gap-6 text-xs font-mono font-bold text-slate-400 tracking-widest uppercase">
+                      <span className="cursor-pointer hover:text-slate-200 transition-colors">Mapping</span>
+                      <span className="cursor-pointer hover:text-slate-200 transition-colors">Analytics</span>
+                      <span className="text-[#d8833b] border-b-2 border-[#d8833b] pb-1 cursor-pointer">DATA MAINTENANCE</span>
+                    </div>
+                </div>
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => {
+                      if(interiorTarget) {
+                          setInteriorTarget(null);
+                      } else {
+                          setIsExplorationMode(false);
+                          setSelectedAsset(null);
+                      }
+                    }}
+                    className="bg-slate-800 border border-slate-600 text-white hover:bg-slate-700 px-4 py-2 font-bold text-[10px] md:text-xs uppercase tracking-widest transition-all shadow-xl flex items-center gap-2 rounded"
+                  >
+                    {interiorTarget ? (
+                      <span className="flex items-center gap-2"><ArrowLeft size={14} /> Exit Building</span>
+                    ) : (
+                      <span className="flex items-center gap-2"><Minimize size={14} /> Exit Model</span>
+                    )}
+                  </button>
+                </div>
+              </nav>
+             
+             {/* Dynamic Asset Panel */}
+             {selectedAsset && !interiorTarget && (
+                <div className="absolute top-28 left-6 w-80 bg-[#0f172a]/95 backdrop-blur-md border-t-4 border-[#5e24ff] p-6 shadow-2xl rounded-lg pointer-events-auto animate-fade-in">
+                  <div className="flex justify-between items-start mb-3">
+                    <h3 className="font-mono font-bold text-slate-400 uppercase tracking-widest text-[10px]">Asset ID: {selectedAsset.id}</h3>
+                    <button onClick={() => setSelectedAsset(null)} className="text-slate-400 hover:text-white"><X size={16}/></button>
+                  </div>
+                  <h2 className="text-2xl font-black text-white mb-2 leading-tight">{selectedAsset.type}</h2>
+                  <p className="text-slate-400 text-xs leading-relaxed mb-6">{selectedAsset.desc}</p>
+                  
+                  <div className="flex flex-col gap-3">
+                    {selectedAsset.interiorCamPos && (
+                        <button onClick={() => setInteriorTarget(selectedAsset)} className="w-full bg-[#5e24ff] text-white px-4 py-3 text-[10px] md:text-xs tracking-widest uppercase font-bold hover:bg-[#4c1dcc] transition-colors rounded flex items-center justify-center gap-2 shadow-[0_0_15px_rgba(94,36,255,0.4)]">
+                           <DoorOpen size={16} /> Enter Facility
+                        </button>
+                    )}
+                    <button 
+                      onClick={() => setShowDataMatrix(true)}
+                      className="w-full border border-slate-600 text-slate-300 px-4 py-3 text-[10px] md:text-xs tracking-widest uppercase font-bold hover:bg-slate-800 transition-colors rounded flex items-center justify-center gap-2"
+                    >
+                      <Database size={16} /> Data Matrix
+                    </button>
+                  </div>
+                </div>
+             )}
+
+             {!interiorTarget && !selectedAsset && (
+                 <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-white/20">
+                   <Crosshair size={40} strokeWidth={1} />
+                 </div>
+             )}
+          </div>
+          
+          <div className="hidden lg:block absolute right-6 top-28 z-40 bg-[#0f172a]/90 backdrop-blur-md border border-slate-700/50 rounded-lg p-4 w-64 pointer-events-auto shadow-2xl">
+              <h3 className="text-xs text-slate-300 font-mono font-bold tracking-widest uppercase border-b border-slate-700 pb-2 mb-3">Vision 980 Key</h3>
+              <div className="space-y-3 mb-4">
+                  <div className="flex items-center gap-3 text-xs text-slate-300 font-medium">
+                     <Building size={14} className="text-[#d8833b]" /> Cap Infrastructure
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-300 font-medium">
+                     <Star size={14} className="text-[#1a3632]" /> Reclaim East Oakland
+                  </div>
+                  <div className="flex items-center gap-3 text-xs text-slate-500 font-medium opacity-70">
+                     <Crosshair size={14} className="text-rose-500" /> Displaced Asset
+                  </div>
+              </div>
+          </div>
+
+          <div className="w-full bg-[#0f172a]/95 border-t border-slate-800 px-6 py-2 flex justify-between items-center text-[10px] font-mono text-slate-500 tracking-wide pointer-events-auto">
+             <span>Vision 980 Phase 2 | Reclaim East Oakland Protocol Active.</span>
+             <span className="flex items-center gap-1 font-sans font-black text-slate-400">EV<span className="text-[#d8833b]">O</span>AK!</span>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+const root = createRoot(document.getElementById('root'));
+root.render(<App />);
+    </script>
+</body>
+</html>
